@@ -2,11 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, ArrowLeft } from 'lucide-react';
 import { marked } from 'marked';
 
-export default function ChatInterface({ chatId, onBack }) {
+export default function ChatInterface({ chatId, initialQuery, onBack }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const initialQueryHandled = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -23,35 +24,65 @@ export default function ChatInterface({ chatId, onBack }) {
         .then(data => {
           if (data.status === 'success') {
             setMessages(data.history);
+            if (initialQuery && !initialQueryHandled.current) {
+              initialQueryHandled.current = true;
+              handleSend(initialQuery);
+            }
           }
         });
     }
   }, [chatId]);
 
-  const handleSend = async () => {
-    if (!input.trim() || !chatId || loading) return;
+  const handleSend = async (overrideQuery = null) => {
+    const userMsg = typeof overrideQuery === 'string' ? overrideQuery : input.trim();
+    if (!userMsg || !chatId || loading) return;
 
-    const userMsg = input.trim();
-    setInput('');
+    if (typeof overrideQuery !== 'string') setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
     setLoading(true);
+    
+    // Add an empty bot message that we will append to
+    setMessages(prev => [...prev, { role: 'bot', content: '' }]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chats', {
+      const response = await fetch('http://localhost:8000/api/chats/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, query: userMsg }),
       });
       
-      const data = await response.json();
-      
-      if (!response.ok || data.status === 'error') {
-        throw new Error(data.message || data.detail || 'Chat failed');
+      if (!response.ok) {
+        throw new Error('Chat failed');
       }
 
-      setMessages(prev => [...prev, { role: 'bot', content: data.response }]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastIndex = newMessages.length - 1;
+          newMessages[lastIndex] = { 
+            ...newMessages[lastIndex], 
+            content: newMessages[lastIndex].content + chunk 
+          };
+          return newMessages;
+        });
+      }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'bot', content: `**Error:** ${err.message}` }]);
+      setMessages(prev => {
+         const newMessages = [...prev];
+         const lastIndex = newMessages.length - 1;
+         newMessages[lastIndex] = {
+            ...newMessages[lastIndex],
+            content: `**Error:** ${err.message}`
+         };
+         return newMessages;
+      });
     } finally {
       setLoading(false);
     }

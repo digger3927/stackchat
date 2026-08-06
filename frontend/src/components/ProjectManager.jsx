@@ -128,15 +128,15 @@ export default function ProjectManager({ onProjectSelect, currentProjectId }) {
           <label>Project Name</label>
           <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Finance Docs" />
           
-          <label style={{ marginTop: '0.5rem' }}>Folder Path</label>
+          <label style={{ marginTop: '0.5rem' }}>Folder Path or URL</label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <input type="text" value={folderPath} onChange={e => setFolderPath(e.target.value)} placeholder="/path/to/docs" style={{ flex: 1 }} />
+            <input type="text" value={folderPath} onChange={e => setFolderPath(e.target.value)} placeholder="/path/to/docs or https://..." style={{ flex: 1 }} />
             <button onClick={handleBrowse} style={{ background: 'transparent', border: '1px solid var(--border-color)', padding: '0.75rem', width: 'auto' }}>...</button>
           </div>
           
           <label style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            <input type="checkbox" checked={skipMedia} onChange={e => setSkipMedia(e.target.checked)} />
-            Skip audio/video files (faster ingestion)
+            <input type="checkbox" checked={skipMedia} onChange={e => setSkipMedia(e.target.checked)} disabled={folderPath.trim().startsWith('http')} />
+            Skip audio/video files (faster ingestion - only for folders)
           </label>
           
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>

@@ -7,10 +7,17 @@ import { Database } from 'lucide-react';
 function App() {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentChatId, setCurrentChatId] = useState(null);
+  const [initialQuery, setInitialQuery] = useState(null);
 
   const handleProjectSelect = (id) => {
     setCurrentProjectId(id);
-    setCurrentChatId(null); // Go back to dashboard when switching projects
+    setCurrentChatId(null);
+    setInitialQuery(null);
+  };
+
+  const handleOpenChat = (id, query = null) => {
+    setCurrentChatId(id);
+    setInitialQuery(query);
   };
 
   return (
@@ -32,12 +39,13 @@ function App() {
         ) : !currentChatId ? (
           <ProjectDashboard 
             projectId={currentProjectId} 
-            onOpenChat={setCurrentChatId} 
+            onOpenChat={handleOpenChat} 
           />
         ) : (
           <ChatInterface 
             chatId={currentChatId} 
-            onBack={() => setCurrentChatId(null)} 
+            initialQuery={initialQuery}
+            onBack={() => { setCurrentChatId(null); setInitialQuery(null); }} 
           />
         )}
       </div>

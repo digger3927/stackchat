@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -22,6 +23,13 @@ class ProjectRequest(BaseModel):
     name: str
     folder_path: str
     skip_media: bool = False
+
+class IngestRequest(BaseModel):
+    folder_path: str
+    skip_media: bool = False
+
+class URLIngestRequest(BaseModel):
+    url: str
 
 class ChatRequest(BaseModel):
     chat_id: int
@@ -66,16 +74,23 @@ async def select_folder():
 @app.post("/api/projects")
 async def create_project(request: ProjectRequest):
     try:
-        if not os.path.isabs(request.folder_path):
-            return {"status": "error", "message": "Please provide an absolute path."}
+        is_url = request.folder_path.strip().startswith("http://") or request.folder_path.strip().startswith("https://")
+        if not is_url and not os.path.isabs(request.folder_path):
+            return {"status": "error", "message": "Please provide an absolute path or a valid URL."}
             
         try:
             project_id = database.create_project(request.name, request.folder_path)
         except Exception as e:
              return {"status": "error", "message": f"Project already exists or error: {str(e)}"}
              
-        doc_count = rag_engine.ingest_folder(request.folder_path, f"project_{project_id}", request.skip_media)
-        return {"status": "success", "project_id": project_id, "message": f"Successfully ingested {doc_count} documents."}
+        if is_url:
+            doc_count = rag_engine.ingest_url(request.folder_path.strip(), f"project_{project_id}")
+            message = "Successfully ingested URL."
+        else:
+            doc_count = rag_engine.ingest_folder(request.folder_path, f"project_{project_id}", request.skip_media)
+            message = f"Successfully ingested {doc_count} documents."
+            
+        return {"status": "success", "project_id": project_id, "message": message}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -108,22 +123,47 @@ async def get_project_chats(project_id: int):
     chats = database.get_chats(project_id)
     return {"status": "success", "chats": chats}
 
-@app.post("/api/projects/{project_id}/chats")
-async def create_chat_and_ask(project_id: int, request: NewChatRequest):
+@app.post("/api/projects/{project_id}/ingest")
+async def ingest_more_documents(project_id: int, request: IngestRequest):
+    try:
+        project = database.get_project(project_id)
+        if not project:
+            return {"status": "error", "message": "Project not found"}
+            
+        if not os.path.isabs(request.folder_path):
+            return {"status": "error", "message": "Please provide an absolute path."}
+            
+        doc_count = rag_engine.ingest_folder(request.folder_path, f"project_{project_id}", request.skip_media)
+        return {"status": "success", "message": f"Successfully ingested {doc_count} additional documents."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/ingest-url")
+async def ingest_url_endpoint(project_id: int, request: URLIngestRequest):
+    try:
+        project = database.get_project(project_id)
+        if not project:
+            return {"status": "error", "message": "Project not found"}
+            
+        if not request.url.startswith("http"):
+            return {"status": "error", "message": "Invalid URL. Must start with http or https."}
+            
+        doc_count = rag_engine.ingest_url(request.url, f"project_{project_id}")
+        return {"status": "success", "message": f"Successfully ingested URL."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/chats/create")
+async def create_empty_chat(project_id: int, request: NewChatRequest):
     try:
         project = database.get_project(project_id)
         if not project:
             return {"status": "error", "message": "Project not found"}
 
-        # Title is the first 40 chars of the query
-        title = request.query[:40] + ("..." if len(request.query) > 40 else "")
+        title = request.query[:40] + ("..." if len(request.query) > 40 else "") if request.query else "New Chat"
         chat_id = database.create_chat(project_id, title)
         
-        database.add_message(chat_id, "user", request.query)
-        response = rag_engine.chat(request.query, f"project_{project_id}", [])
-        database.add_message(chat_id, "bot", response)
-        
-        return {"status": "success", "chat_id": chat_id, "response": response}
+        return {"status": "success", "chat_id": chat_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -140,20 +180,26 @@ async def delete_chat(chat_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/chats")
-async def send_chat_message(request: ChatRequest):
+@app.post("/api/chats/stream")
+async def send_chat_message_stream(request: ChatRequest):
     try:
         chat = database.get_chat(request.chat_id)
         if not chat:
             return {"status": "error", "message": "Chat not found"}
             
         history = database.get_messages(request.chat_id)
-        
         database.add_message(request.chat_id, "user", request.query)
-        response = rag_engine.chat(request.query, f"project_{chat['project_id']}", history)
-        database.add_message(request.chat_id, "bot", response)
         
-        return {"status": "success", "response": response}
+        project_name = f"project_{chat['project_id']}"
+        
+        def generate():
+            full_response = ""
+            for token in rag_engine.stream_chat(request.query, project_name, history):
+                full_response += token
+                yield token
+            database.add_message(request.chat_id, "bot", full_response)
+            
+        return StreamingResponse(generate(), media_type="text/plain")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

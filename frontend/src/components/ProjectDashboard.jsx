@@ -8,10 +8,14 @@ export default function ProjectDashboard({ projectId, onOpenChat }) {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!projectId) return;
-    
-    // Fetch project details
+  // New states for adding documents
+  const [showAddDocs, setShowAddDocs] = useState(false);
+  const [folderPath, setFolderPath] = useState('');
+  const [skipMedia, setSkipMedia] = useState(true);
+  const [ingestStatus, setIngestStatus] = useState('idle');
+  const [ingestMessage, setIngestMessage] = useState('');
+
+  const fetchProjectDetails = () => {
     fetch(`http://localhost:8000/api/projects/${projectId}`)
       .then(res => res.json())
       .then(data => {
@@ -19,6 +23,11 @@ export default function ProjectDashboard({ projectId, onOpenChat }) {
           setProject(data.project);
         }
       });
+  };
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetchProjectDetails();
       
     // Fetch past chats
     fetch(`http://localhost:8000/api/projects/${projectId}/chats`)
@@ -36,14 +45,14 @@ export default function ProjectDashboard({ projectId, onOpenChat }) {
     
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/chats`, {
+      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/chats/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: query.trim() }),
       });
       const data = await res.json();
       if (data.status === 'success') {
-        onOpenChat(data.chat_id);
+        onOpenChat(data.chat_id, query.trim());
       }
     } catch (err) {
       console.error(err);
@@ -69,17 +78,106 @@ export default function ProjectDashboard({ projectId, onOpenChat }) {
     }
   };
 
+  const handleBrowse = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/select-folder');
+      const data = await res.json();
+      if (data.status === 'success' && data.folder_path) {
+        setFolderPath(data.folder_path);
+      }
+    } catch (err) {
+      console.error("Failed to open folder picker", err);
+    }
+  };
+
+  const handleAddDocs = async () => {
+    if (!folderPath) return;
+    setIngestStatus('loading');
+    
+    try {
+      const isUrl = folderPath.trim().startsWith('http://') || folderPath.trim().startsWith('https://');
+      setIngestMessage(`Ingesting ${isUrl ? 'URL' : 'documents'}... This may take a while.`);
+      
+      const endpoint = isUrl 
+        ? `http://localhost:8000/api/projects/${projectId}/ingest-url` 
+        : `http://localhost:8000/api/projects/${projectId}/ingest`;
+        
+      const payload = isUrl 
+        ? { url: folderPath.trim() } 
+        : { folder_path: folderPath.trim(), skip_media: skipMedia };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      
+      if (!res.ok || data.status === 'error') {
+        throw new Error(data.message || 'Failed to ingest');
+      }
+      
+      setIngestStatus('success');
+      setIngestMessage(data.message);
+      fetchProjectDetails();
+      
+      setTimeout(() => {
+         setShowAddDocs(false);
+         setIngestStatus('idle');
+         setFolderPath('');
+      }, 3000);
+    } catch (err) {
+      setIngestStatus('error');
+      setIngestMessage(err.message);
+    }
+  };
+
   if (!project) return <div className="empty-state"><Loader2 className="animate-spin" size={32} /></div>;
 
   return (
     <div className="project-dashboard">
       <div className="dashboard-header">
         <h1 className="project-title">{project.name}</h1>
-        <div className="sources-badge">
-          <FileText size={14} color="#ef4444" />
-          <span style={{ fontWeight: 600 }}>{project.doc_count || 0} Sources</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div className="sources-badge">
+            <FileText size={14} color="#ef4444" />
+            <span style={{ fontWeight: 600 }}>{project.doc_count || 0} Sources</span>
+          </div>
+          <button className="icon-action" onClick={() => setShowAddDocs(!showAddDocs)} title="Add more documents">
+             <Plus size={16} />
+          </button>
         </div>
       </div>
+      
+      {showAddDocs && (
+        <div className="input-group" style={{ background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
+          <label>Add Folder or URL to Project</label>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <input type="text" value={folderPath} onChange={e => setFolderPath(e.target.value)} placeholder="/path/to/docs or https://..." style={{ flex: 1 }} />
+            <button onClick={handleBrowse} style={{ background: 'transparent', border: '1px solid var(--border-color)', padding: '0.75rem', width: 'auto' }}>...</button>
+          </div>
+          
+          <label style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+            <input type="checkbox" checked={skipMedia} onChange={e => setSkipMedia(e.target.checked)} disabled={folderPath.trim().startsWith('http')} />
+            Skip audio/video files (faster ingestion - only for folders)
+          </label>
+          
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+            <button onClick={handleAddDocs} disabled={ingestStatus === 'loading' || !folderPath} style={{ flex: 1 }}>
+              {ingestStatus === 'loading' ? <Loader2 className="animate-spin" size={16} /> : 'Ingest'}
+            </button>
+            <button onClick={() => setShowAddDocs(false)} style={{ background: 'transparent', border: '1px solid var(--text-muted)' }}>
+              Cancel
+            </button>
+          </div>
+          
+          {ingestStatus !== 'idle' && (
+            <div className={`status-msg status-${ingestStatus}`} style={{ marginTop: '0.5rem' }}>
+              <span>{ingestMessage}</span>
+            </div>
+          )}
+        </div>
+      )}
       
       <form className="ask-box" onSubmit={handleAsk}>
         <div className="ask-box-top">

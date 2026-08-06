@@ -98,6 +98,37 @@ class RAGEngine:
         
         return len(documents)
 
+    def ingest_url(self, url: str, project_name: str):
+        """Fetches a URL, extracts text, generates embeddings, and stores them in ChromaDB."""
+        import requests
+        from bs4 import BeautifulSoup
+        from llama_index.core import Document
+        
+        self.load_project(project_name)
+        
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        for script in soup(["script", "style"]):
+            script.extract()
+            
+        text = soup.get_text(separator=' ')
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+        
+        doc = Document(text=text, metadata={"source": url})
+        
+        if self.index:
+            self.index.insert(doc)
+        else:
+            self.index = VectorStoreIndex.from_documents(
+                [doc], storage_context=self.storage_context
+            )
+            
+        return 1
+
     def chat(self, query: str, project_name: str, chat_history: list):
         """Queries the vector index using the LLM and retrieved context with history."""
         self.load_project(project_name)
@@ -118,6 +149,29 @@ class RAGEngine:
             
         response = chat_engine.chat(query)
         return str(response)
+
+    def stream_chat(self, query: str, project_name: str, chat_history: list):
+        """Queries the vector index using the LLM and retrieved context, streaming the response."""
+        self.load_project(project_name)
+        
+        if not self.index:
+            yield "No documents have been ingested for this project yet."
+            return
+            
+        formatted_history = []
+        for msg in chat_history:
+            role = MessageRole.USER if msg["role"] == "user" else MessageRole.ASSISTANT
+            formatted_history.append(ChatMessage(role=role, content=msg["content"]))
+            
+        chat_engine = self.index.as_chat_engine(
+            chat_mode="context",
+            chat_history=formatted_history,
+            system_prompt="You are a helpful AI assistant answering questions about the provided documents."
+        )
+            
+        response = chat_engine.stream_chat(query)
+        for token in response.response_gen:
+            yield token
 
 # Singleton instance
 rag_engine = RAGEngine()
