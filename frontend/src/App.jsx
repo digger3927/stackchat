@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
-import FolderIngestion from './components/FolderIngestion';
+import ProjectManager from './components/ProjectManager';
 import ChatInterface from './components/ChatInterface';
 import ModelSelector from './components/ModelSelector';
 
 function App() {
-  const [hasIndex, setHasIndex] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState(null);
 
   return (
     <div className="app-container">
       <div className="sidebar glass-panel">
         <h2>Local RAG Setup</h2>
         <ModelSelector />
-        <FolderIngestion onIngestSuccess={() => setHasIndex(true)} />
+        <ProjectManager 
+          currentProjectId={currentProjectId}
+          onProjectSelect={setCurrentProjectId} 
+        />
       </div>
       
       <div className="chat-container glass-panel">
-        <ChatInterface hasIndex={hasIndex} />
+        <ChatInterface projectId={currentProjectId} />
       </div>
     </div>
   );

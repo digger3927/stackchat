@@ -318,3 +318,83 @@ button:disabled {
   max-width: 400px;
   line-height: 1.5;
 }
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.project-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.project-item:hover {
+  background: rgba(15, 23, 42, 0.8);
+  border-color: var(--border-color);
+}
+
+.project-item.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: var(--accent-color);
+}
+
+.project-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+}
+
+.project-actions {
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.project-item:hover .project-actions {
+  opacity: 1;
+}
+
+.icon-action {
+  background: transparent;
+  border: none;
+  padding: 0.25rem;
+  color: var(--text-muted);
+}
+
+.icon-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border-radius: 4px;
+}
+
+.icon-action.delete:hover {
+  color: #ef4444;
+}
+
+.rename-input {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  font-size: 0.9rem;
+  color: var(--text-main) !important;
+  outline: none;
+  box-shadow: none !important;
+}

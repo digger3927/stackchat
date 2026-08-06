@@ -7,9 +7,9 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core import Settings
+from llama_index.core.llms import ChatMessage, MessageRole
 
 # Configure Ollama models
-# We use llama3.2 for chatting and nomic-embed-text for fast local embeddings
 default_model = "llama3.2"
 llm = Ollama(model=default_model, request_timeout=120.0)
 embed_model = OllamaEmbedding(model_name="nomic-embed-text")
@@ -25,24 +25,28 @@ DB_DIR = os.path.join(os.path.dirname(__file__), ".chroma_db")
 db = chromadb.PersistentClient(path=DB_DIR)
 
 class RAGEngine:
-    def __init__(self, collection_name="local_docs"):
+    def __init__(self):
         self.current_model = default_model
-        self.collection_name = collection_name
+        self.index = None
+        self.collection_name = None
+
+    def load_project(self, project_name: str):
+        if self.collection_name == project_name and self.index is not None:
+            return # Already loaded
+            
+        self.collection_name = project_name
         self.chroma_collection = db.get_or_create_collection(self.collection_name)
         self.vector_store = ChromaVectorStore(chroma_collection=self.chroma_collection)
         self.storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         
-        # Load existing index if it exists
         try:
             self.index = VectorStoreIndex.from_vector_store(
                 self.vector_store,
                 storage_context=self.storage_context
             )
-            self.query_engine = self.index.as_query_engine(streaming=False)
         except Exception as e:
             print(f"No existing index found or error loading: {e}")
             self.index = None
-            self.query_engine = None
 
     def get_available_models(self):
         try:
@@ -59,22 +63,22 @@ class RAGEngine:
         self.current_model = model_name
         llm = Ollama(model=model_name, request_timeout=120.0)
         Settings.llm = llm
-        
-        # If we have an index, recreate the query engine so it uses the new LLM
-        if self.index:
-            self.query_engine = self.index.as_query_engine(streaming=False)
 
-    def ingest_folder(self, folder_path: str):
+    def ingest_folder(self, folder_path: str, project_name: str, skip_media: bool = False):
         """Scans folder, extracts text, generates embeddings, and stores them in ChromaDB."""
         if not os.path.exists(folder_path):
             raise FileNotFoundError(f"Folder not found: {folder_path}")
             
-        # LlamaIndex's SimpleDirectoryReader handles many file types natively
-        # (txt, md, pdf, epub, html) using the right installed dependencies.
+        self.load_project(project_name)
+            
+        exclude_patterns = None
+        if skip_media:
+            exclude_patterns = ["*.mp4", "*.mkv", "*.avi", "*.mov", "*.mp3", "*.wav", "*.m4a", "*.flac", "*.wmv", "*.webm", "*.ogg", "*.aac", "*.wma"]
+            
         reader = SimpleDirectoryReader(
             input_dir=folder_path,
             recursive=True,
-            # We can expand required_exts if we want to restrict, but default is good.
+            exclude=exclude_patterns
         )
         
         documents = reader.load_data()
@@ -83,16 +87,28 @@ class RAGEngine:
         self.index = VectorStoreIndex.from_documents(
             documents, storage_context=self.storage_context
         )
-        self.query_engine = self.index.as_query_engine(streaming=False)
         
         return len(documents)
 
-    def chat(self, query: str):
-        """Queries the vector index using the LLM and retrieved context."""
-        if not self.query_engine:
-            return "No documents have been ingested yet. Please ingest a folder first."
+    def chat(self, query: str, project_name: str, chat_history: list):
+        """Queries the vector index using the LLM and retrieved context with history."""
+        self.load_project(project_name)
+        
+        if not self.index:
+            return "No documents have been ingested for this project yet."
             
-        response = self.query_engine.query(query)
+        formatted_history = []
+        for msg in chat_history:
+            role = MessageRole.USER if msg["role"] == "user" else MessageRole.ASSISTANT
+            formatted_history.append(ChatMessage(role=role, content=msg["content"]))
+            
+        chat_engine = self.index.as_chat_engine(
+            chat_mode="context",
+            chat_history=formatted_history,
+            system_prompt="You are a helpful AI assistant answering questions about the provided documents."
+        )
+            
+        response = chat_engine.chat(query)
         return str(response)
 
 # Singleton instance

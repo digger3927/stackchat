@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, Database } from 'lucide-react';
 import { marked } from 'marked';
 
-export default function ChatInterface({ hasIndex }) {
+export default function ChatInterface({ projectId }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,8 +16,22 @@ export default function ChatInterface({ hasIndex }) {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (projectId) {
+      fetch(`http://localhost:8000/api/projects/${projectId}/history`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === 'success') {
+            setMessages(data.history);
+          }
+        });
+    } else {
+      setMessages([]);
+    }
+  }, [projectId]);
+
   const handleSend = async () => {
-    if (!input.trim() || !hasIndex || loading) return;
+    if (!input.trim() || !projectId || loading) return;
 
     const userMsg = input.trim();
     setInput('');
@@ -28,13 +42,13 @@ export default function ChatInterface({ hasIndex }) {
       const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userMsg }),
+        body: JSON.stringify({ project_id: projectId, query: userMsg }),
       });
       
       const data = await response.json();
       
-      if (!response.ok) {
-        throw new Error(data.detail || 'Chat failed');
+      if (!response.ok || data.status === 'error') {
+        throw new Error(data.message || data.detail || 'Chat failed');
       }
 
       setMessages(prev => [...prev, { role: 'bot', content: data.response }]);
@@ -45,12 +59,12 @@ export default function ChatInterface({ hasIndex }) {
     }
   };
 
-  if (!hasIndex && messages.length === 0) {
+  if (!projectId) {
     return (
       <div className="empty-state">
         <Database size={48} strokeWidth={1} />
-        <h3>No Documents Ingested</h3>
-        <p>Please use the sidebar to ingest a folder of documents before starting a chat.</p>
+        <h3>No Project Selected</h3>
+        <p>Please select or create a project in the sidebar to start chatting.</p>
       </div>
     );
   }
@@ -83,9 +97,9 @@ export default function ChatInterface({ hasIndex }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           placeholder="Ask a question about your documents..."
-          disabled={!hasIndex || loading}
+          disabled={loading}
         />
-        <button className="icon-btn" onClick={handleSend} disabled={!hasIndex || !input.trim() || loading}>
+        <button className="icon-btn" onClick={handleSend} disabled={!input.trim() || loading}>
           <Send size={18} />
         </button>
       </div>
