@@ -21,6 +21,9 @@ class IngestRequest(BaseModel):
 class ChatRequest(BaseModel):
     query: str
 
+class SetModelRequest(BaseModel):
+    model_name: str
+
 @app.post("/api/ingest")
 async def ingest_folder(request: IngestRequest):
     try:
@@ -29,6 +32,19 @@ async def ingest_folder(request: IngestRequest):
             
         doc_count = rag_engine.ingest_folder(request.folder_path)
         return {"status": "success", "message": f"Successfully ingested {doc_count} documents."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/models")
+async def get_models():
+    models = rag_engine.get_available_models()
+    return {"status": "success", "models": models, "current_model": rag_engine.current_model}
+
+@app.post("/api/models/set")
+async def set_model(request: SetModelRequest):
+    try:
+        rag_engine.set_model(request.model_name)
+        return {"status": "success", "message": f"Model set to {request.model_name}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
