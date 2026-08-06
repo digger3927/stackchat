@@ -1,0 +1,15 @@
+# Python / Backend
+venv/
+__pycache__/
+.chroma_db/
+*.pyc
+.env
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
