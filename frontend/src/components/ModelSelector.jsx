@@ -1,25 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Loader2 } from 'lucide-react';
+import { Cpu, Settings2, Loader2 } from 'lucide-react';
 
-export default function ModelSelector() {
+export default function ModelSelector({ compact = false }) {
   const [models, setModels] = useState([]);
   const [currentModel, setCurrentModel] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/models')
-      .then(res => res.json())
-      .then(data => {
+    const fetchModels = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/models');
+        const data = await res.json();
         if (data.status === 'success') {
           setModels(data.models);
           setCurrentModel(data.current_model);
         }
-        setLoading(false);
-      })
-      .catch(err => {
+      } catch (err) {
         console.error("Failed to fetch models", err);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+    fetchModels();
   }, []);
 
   const handleModelChange = async (e) => {
@@ -35,6 +37,21 @@ export default function ModelSelector() {
       console.error("Failed to set model", err);
     }
   };
+
+  if (compact) {
+    return (
+      <select 
+        value={currentModel} 
+        onChange={handleModelChange}
+        disabled={loading}
+        className="compact-model-select"
+      >
+        {models.map(m => (
+          <option key={m} value={m}>{m}</option>
+        ))}
+      </select>
+    );
+  }
 
   return (
     <div className="input-group" style={{ marginBottom: '1rem' }}>

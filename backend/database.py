@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "stackchat.db")
 
@@ -21,15 +22,31 @@ def init_db():
             pass # Column already exists
             
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
+            CREATE TABLE IF NOT EXISTS chats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                title TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
         """)
+            
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                chat_id INTEGER,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+            )
+        """)
+        try:
+            conn.execute("ALTER TABLE messages ADD COLUMN chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 init_db()
@@ -50,22 +67,11 @@ def get_projects():
 def get_project(project_id: int):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, folder_path FROM projects WHERE id = ?", (project_id,))
+        cursor.execute("SELECT id, name, folder_path, COALESCE(pinned, 0) FROM projects WHERE id = ?", (project_id,))
         row = cursor.fetchone()
         if row:
-            return {"id": row[0], "name": row[1], "folder_path": row[2]}
+            return {"id": row[0], "name": row[1], "folder_path": row[2], "pinned": bool(row[3])}
         return None
-
-def add_message(project_id: int, role: str, content: str):
-    with get_connection() as conn:
-        conn.execute("INSERT INTO messages (project_id, role, content) VALUES (?, ?, ?)", (project_id, role, content))
-        conn.commit()
-
-def get_messages(project_id: int):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT role, content FROM messages WHERE project_id = ? ORDER BY id ASC", (project_id,))
-        return [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
 
 def rename_project(project_id: int, new_name: str):
     with get_connection() as conn:
@@ -80,4 +86,47 @@ def delete_project(project_id: int):
 def set_project_pinned(project_id: int, pinned: bool):
     with get_connection() as conn:
         conn.execute("UPDATE projects SET pinned = ? WHERE id = ?", (1 if pinned else 0, project_id))
+        conn.commit()
+
+def create_chat(project_id: int, title: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO chats (project_id, title) VALUES (?, ?)", (project_id, title))
+        conn.commit()
+        return cursor.lastrowid
+
+def get_chats(project_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title, created_at FROM chats WHERE project_id = ? ORDER BY id DESC", (project_id,))
+        # Format dates nicely
+        chats = []
+        for row in cursor.fetchall():
+            dt = datetime.strptime(row[2], "%Y-%m-%d %H:%M:%S") if type(row[2]) is str else row[2]
+            chats.append({"id": row[0], "title": row[1], "created_at": dt.strftime("%b %d, %Y")})
+        return chats
+
+def get_chat(chat_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, project_id, title FROM chats WHERE id = ?", (chat_id,))
+        row = cursor.fetchone()
+        if row:
+            return {"id": row[0], "project_id": row[1], "title": row[2]}
+        return None
+
+def add_message(chat_id: int, role: str, content: str):
+    with get_connection() as conn:
+        conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", (chat_id, role, content))
+        conn.commit()
+
+def get_messages(chat_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC", (chat_id,))
+        return [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
+
+def delete_chat(chat_id: int):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
         conn.commit()

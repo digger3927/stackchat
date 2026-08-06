@@ -59,6 +59,14 @@ class RAGEngine:
             print(f"Error fetching models: {e}")
             return [self.current_model]
 
+    def get_doc_count(self, project_id: int):
+        collection_name = f"project_{project_id}"
+        try:
+            col = db.get_collection(collection_name)
+            return col.count()
+        except ValueError:
+            return 0
+
     def set_model(self, model_name: str):
         self.current_model = model_name
         llm = Ollama(model=model_name, request_timeout=120.0)

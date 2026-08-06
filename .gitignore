@@ -13,3 +13,6 @@ frontend/dist/
 # Editor
 .vscode/
 .idea/
+
+# Database
+*.db

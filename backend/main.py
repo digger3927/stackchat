@@ -24,7 +24,10 @@ class ProjectRequest(BaseModel):
     skip_media: bool = False
 
 class ChatRequest(BaseModel):
-    project_id: int
+    chat_id: int
+    query: str
+
+class NewChatRequest(BaseModel):
     query: str
 
 class SetModelRequest(BaseModel):
@@ -39,6 +42,16 @@ class PinRequest(BaseModel):
 @app.get("/api/projects")
 async def get_projects():
     return {"status": "success", "projects": database.get_projects()}
+
+@app.get("/api/projects/{project_id}")
+async def get_project_details(project_id: int):
+    project = database.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    doc_count = rag_engine.get_doc_count(project_id)
+    project["doc_count"] = doc_count
+    return {"status": "success", "project": project}
 
 @app.get("/api/select-folder")
 async def select_folder():
@@ -90,23 +103,55 @@ async def delete_project(project_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/projects/{project_id}/history")
-async def get_project_history(project_id: int):
-    history = database.get_messages(project_id)
-    return {"status": "success", "history": history}
+@app.get("/api/projects/{project_id}/chats")
+async def get_project_chats(project_id: int):
+    chats = database.get_chats(project_id)
+    return {"status": "success", "chats": chats}
 
-@app.post("/api/chat")
-async def chat(request: ChatRequest):
+@app.post("/api/projects/{project_id}/chats")
+async def create_chat_and_ask(project_id: int, request: NewChatRequest):
     try:
-        project = database.get_project(request.project_id)
+        project = database.get_project(project_id)
         if not project:
             return {"status": "error", "message": "Project not found"}
-            
-        history = database.get_messages(request.project_id)
+
+        # Title is the first 40 chars of the query
+        title = request.query[:40] + ("..." if len(request.query) > 40 else "")
+        chat_id = database.create_chat(project_id, title)
         
-        database.add_message(request.project_id, "user", request.query)
-        response = rag_engine.chat(request.query, f"project_{request.project_id}", history)
-        database.add_message(request.project_id, "bot", response)
+        database.add_message(chat_id, "user", request.query)
+        response = rag_engine.chat(request.query, f"project_{project_id}", [])
+        database.add_message(chat_id, "bot", response)
+        
+        return {"status": "success", "chat_id": chat_id, "response": response}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chats/{chat_id}/history")
+async def get_chat_history(chat_id: int):
+    history = database.get_messages(chat_id)
+    return {"status": "success", "history": history}
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat(chat_id: int):
+    try:
+        database.delete_chat(chat_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chats")
+async def send_chat_message(request: ChatRequest):
+    try:
+        chat = database.get_chat(request.chat_id)
+        if not chat:
+            return {"status": "error", "message": "Chat not found"}
+            
+        history = database.get_messages(request.chat_id)
+        
+        database.add_message(request.chat_id, "user", request.query)
+        response = rag_engine.chat(request.query, f"project_{chat['project_id']}", history)
+        database.add_message(request.chat_id, "bot", response)
         
         return {"status": "success", "response": response}
     except Exception as e:

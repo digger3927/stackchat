@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, Database } from 'lucide-react';
+import { Send, Bot, ArrowLeft } from 'lucide-react';
 import { marked } from 'marked';
 
-export default function ChatInterface({ projectId }) {
+export default function ChatInterface({ chatId, onBack }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,21 +17,19 @@ export default function ChatInterface({ projectId }) {
   }, [messages]);
 
   useEffect(() => {
-    if (projectId) {
-      fetch(`http://localhost:8000/api/projects/${projectId}/history`)
+    if (chatId) {
+      fetch(`http://localhost:8000/api/chats/${chatId}/history`)
         .then(res => res.json())
         .then(data => {
           if (data.status === 'success') {
             setMessages(data.history);
           }
         });
-    } else {
-      setMessages([]);
     }
-  }, [projectId]);
+  }, [chatId]);
 
   const handleSend = async () => {
-    if (!input.trim() || !projectId || loading) return;
+    if (!input.trim() || !chatId || loading) return;
 
     const userMsg = input.trim();
     setInput('');
@@ -39,10 +37,10 @@ export default function ChatInterface({ projectId }) {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch('http://localhost:8000/api/chats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId, query: userMsg }),
+        body: JSON.stringify({ chat_id: chatId, query: userMsg }),
       });
       
       const data = await response.json();
@@ -59,21 +57,14 @@ export default function ChatInterface({ projectId }) {
     }
   };
 
-  if (!projectId) {
-    return (
-      <div className="empty-state">
-        <Database size={48} strokeWidth={1} />
-        <h3>No Project Selected</h3>
-        <p>Please select or create a project in the sidebar to start chatting.</p>
-      </div>
-    );
-  }
-
   return (
-    <>
+    <div className="chat-interface-wrapper">
       <div className="chat-header">
+        <button className="icon-btn" onClick={onBack} style={{ marginRight: '1rem', background: 'transparent', border: '1px solid var(--border-color)' }}>
+          <ArrowLeft size={18} />
+        </button>
         <Bot size={24} color="var(--accent-color)" />
-        <h2>Local Knowledge Chat</h2>
+        <h2>Chat</h2>
       </div>
       
       <div className="chat-messages">
@@ -96,13 +87,14 @@ export default function ChatInterface({ projectId }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Ask a question about your documents..."
+          placeholder="Ask a follow-up question..."
           disabled={loading}
+          autoFocus
         />
         <button className="icon-btn" onClick={handleSend} disabled={!input.trim() || loading}>
           <Send size={18} />
         </button>
       </div>
-    </>
+    </div>
   );
 }
