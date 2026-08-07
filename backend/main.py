@@ -1,3 +1,8 @@
+import warnings
+
+# Suppress harmless PIL image warnings generated during document ingestion
+warnings.filterwarnings("ignore", category=UserWarning, module="PIL.Image")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -72,7 +77,7 @@ async def select_folder():
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/projects")
-async def create_project(request: ProjectRequest):
+def create_project(request: ProjectRequest):
     try:
         is_url = request.folder_path.strip().startswith("http://") or request.folder_path.strip().startswith("https://")
         if not is_url and not os.path.isabs(request.folder_path):
@@ -124,7 +129,7 @@ async def get_project_chats(project_id: int):
     return {"status": "success", "chats": chats}
 
 @app.post("/api/projects/{project_id}/ingest")
-async def ingest_more_documents(project_id: int, request: IngestRequest):
+def ingest_more_documents(project_id: int, request: IngestRequest):
     try:
         project = database.get_project(project_id)
         if not project:
@@ -139,7 +144,7 @@ async def ingest_more_documents(project_id: int, request: IngestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/projects/{project_id}/ingest-url")
-async def ingest_url_endpoint(project_id: int, request: URLIngestRequest):
+def ingest_url_endpoint(project_id: int, request: URLIngestRequest):
     try:
         project = database.get_project(project_id)
         if not project:
@@ -192,9 +197,9 @@ async def send_chat_message_stream(request: ChatRequest):
         
         project_name = f"project_{chat['project_id']}"
         
-        def generate():
+        async def generate():
             full_response = ""
-            for token in rag_engine.stream_chat(request.query, project_name, history):
+            async for token in rag_engine.stream_chat(request.query, project_name, history):
                 full_response += token
                 yield token
             database.add_message(request.chat_id, "bot", full_response)

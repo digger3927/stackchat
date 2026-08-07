@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, ArrowLeft } from 'lucide-react';
+import { Send, Bot, ArrowLeft, Download } from 'lucide-react';
 import { marked } from 'marked';
 
 export default function ChatInterface({ chatId, initialQuery, onBack }) {
@@ -33,6 +33,21 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
     }
   }, [chatId]);
 
+  const handleDownload = (content, index) => {
+    if (!content) return;
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Format a nice filename using the index
+    link.setAttribute('download', `stackchat-response-${index + 1}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleSend = async (overrideQuery = null) => {
     const userMsg = typeof overrideQuery === 'string' ? overrideQuery : input.trim();
     if (!userMsg || !chatId || loading) return;
@@ -64,17 +79,19 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
         
         const chunk = decoder.decode(value, { stream: true });
         setMessages(prev => {
+          if (prev.length === 0) return prev;
           const newMessages = [...prev];
           const lastIndex = newMessages.length - 1;
           newMessages[lastIndex] = { 
             ...newMessages[lastIndex], 
-            content: newMessages[lastIndex].content + chunk 
+            content: (newMessages[lastIndex].content || '') + chunk 
           };
           return newMessages;
         });
       }
     } catch (err) {
       setMessages(prev => {
+         if (prev.length === 0) return prev;
          const newMessages = [...prev];
          const lastIndex = newMessages.length - 1;
          newMessages[lastIndex] = {
@@ -101,7 +118,17 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
       <div className="chat-messages">
         {messages.map((msg, i) => (
           <div key={i} className={`message ${msg.role}`}>
-             <div dangerouslySetInnerHTML={{ __html: marked(msg.content) }} />
+             <div dangerouslySetInnerHTML={{ __html: marked(msg.content || '') }} />
+             {msg.role === 'bot' && msg.content && (
+               <button 
+                 className="message-action-btn"
+                 onClick={() => handleDownload(msg.content, i)}
+                 title="Download Response as Markdown"
+               >
+                 <Download size={14} />
+                 <span>Download Markdown</span>
+               </button>
+             )}
           </div>
         ))}
         {loading && (
