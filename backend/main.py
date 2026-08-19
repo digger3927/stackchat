@@ -39,6 +39,7 @@ class URLIngestRequest(BaseModel):
 class ChatRequest(BaseModel):
     chat_id: int
     query: str
+    top_k: int = 5
 
 class NewChatRequest(BaseModel):
     query: str
@@ -202,7 +203,7 @@ async def send_chat_message_stream(request: ChatRequest):
         
         async def generate():
             full_response = ""
-            async for token in rag_engine.stream_chat(request.query, project_name, history):
+            async for token in rag_engine.stream_chat(request.query, project_name, history, top_k=request.top_k):
                 full_response += token
                 yield token
             database.add_message(request.chat_id, "bot", full_response)

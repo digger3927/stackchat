@@ -1,13 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, ArrowLeft, Download } from 'lucide-react';
 import { marked } from 'marked';
+import ModelSelector from './ModelSelector';
 
-export default function ChatInterface({ chatId, initialQuery, onBack }) {
+export default function ChatInterface({ chatId, initialQuery, topK, setTopK, onBack }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const initialQueryHandled = useRef(false);
+
+  const getContextLabel = (value) => {
+    if (value >= 1 && value <= 4) return 'Low';
+    if (value >= 5 && value <= 9) return 'Medium';
+    if (value >= 10 && value <= 15) return 'High';
+    return 'Very High';
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -105,7 +113,7 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
       const response = await fetch('http://localhost:8000/api/chats/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, query: userMsg }),
+        body: JSON.stringify({ chat_id: chatId, query: userMsg, top_k: topK }),
         signal: abortController.signal,
       });
       
@@ -217,6 +225,23 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
         <button className="icon-btn" onClick={handleSend} disabled={!input.trim() || loading}>
           <Send size={18} />
         </button>
+      </div>
+
+      <div className="chat-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', padding: '0 0.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <ModelSelector compact={true} />
+          <div className="context-slider-container" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span>Context: <strong style={{ color: 'var(--text-main)' }}>{getContextLabel(topK)} ({topK})</strong></span>
+            <input 
+              type="range" 
+              min="1" 
+              max="20" 
+              value={topK} 
+              onChange={(e) => setTopK(parseInt(e.target.value))}
+              style={{ width: '80px', cursor: 'pointer', height: '4px', accentColor: 'var(--accent-color)' }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

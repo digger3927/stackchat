@@ -2,11 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Search, Loader2, Plus, Trash2 } from 'lucide-react';
 import ModelSelector from './ModelSelector';
 
-export default function ProjectDashboard({ projectId, onOpenChat }) {
+export default function ProjectDashboard({ projectId, onOpenChat, topK, setTopK }) {
   const [project, setProject] = useState(null);
   const [chats, setChats] = useState([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const getContextLabel = (value) => {
+    if (value >= 1 && value <= 4) return 'Low';
+    if (value >= 5 && value <= 9) return 'Medium';
+    if (value >= 10 && value <= 15) return 'High';
+    return 'Very High';
+  };
 
   // New states for adding documents
   const [showAddDocs, setShowAddDocs] = useState(false);
@@ -220,8 +227,21 @@ export default function ProjectDashboard({ projectId, onOpenChat }) {
             style={{ resize: 'none', overflow: 'hidden', minHeight: '4.5rem' }}
           />
         </div>
-        <div className="ask-box-bottom">
-          <ModelSelector compact={true} />
+        <div className="ask-box-bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <ModelSelector compact={true} />
+            <div className="context-slider-container" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <span>Context: <strong style={{ color: 'var(--text-main)' }}>{getContextLabel(topK)} ({topK})</strong></span>
+              <input 
+                type="range" 
+                min="1" 
+                max="20" 
+                value={topK} 
+                onChange={(e) => setTopK(parseInt(e.target.value))}
+                style={{ width: '80px', cursor: 'pointer', height: '4px', accentColor: 'var(--accent-color)' }}
+              />
+            </div>
+          </div>
           <button type="submit" className="icon-btn submit-btn" disabled={loading || !query.trim()}>
             {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
           </button>

@@ -8,6 +8,7 @@ function App() {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentChatId, setCurrentChatId] = useState(null);
   const [initialQuery, setInitialQuery] = useState(null);
+  const [topK, setTopK] = useState(5);
 
   const handleProjectSelect = (id) => {
     setCurrentProjectId(id);
@@ -40,11 +41,15 @@ function App() {
           <ProjectDashboard 
             projectId={currentProjectId} 
             onOpenChat={handleOpenChat} 
+            topK={topK}
+            setTopK={setTopK}
           />
         ) : (
           <ChatInterface 
             chatId={currentChatId} 
             initialQuery={initialQuery}
+            topK={topK}
+            setTopK={setTopK}
             onBack={() => { setCurrentChatId(null); setInitialQuery(null); }} 
           />
         )}

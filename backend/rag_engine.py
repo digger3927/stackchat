@@ -169,7 +169,7 @@ class RAGEngine:
         response = await chat_engine.achat(query, chat_history=formatted_history)
         return str(response.response)
 
-    async def stream_chat(self, query: str, project_name: str, chat_history: list):
+    async def stream_chat(self, query: str, project_name: str, chat_history: list, top_k: int = 5):
         """Queries the vector index using the LLM and retrieved context, streaming the response."""
         self.load_project(project_name)
         
@@ -184,7 +184,7 @@ class RAGEngine:
             
         chat_engine = self.index.as_chat_engine(
             chat_mode="context",
-            similarity_top_k=5,
+            similarity_top_k=top_k,
             llm=Settings.llm,
             system_prompt=(
                 "You are a helpful assistant. "
