@@ -8,6 +8,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core import Settings
 from llama_index.core.llms import ChatMessage, MessageRole
+from llama_index.readers.file import EpubReader
 
 # Configure Ollama models
 default_model = "llama3.2"
@@ -99,7 +100,10 @@ class RAGEngine:
             input_dir=folder_path,
             recursive=True,
             exclude=exclude_patterns,
-            exclude_hidden=True
+            exclude_hidden=True,
+            file_extractor={
+                ".epub": EpubReader()
+            }
         )
         
         documents = reader.load_data()
