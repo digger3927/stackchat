@@ -67,6 +67,17 @@ class RAGEngine:
         except ValueError:
             return 0
 
+    def delete_project(self, project_id: int):
+        """Deletes the project's vector collection from ChromaDB."""
+        collection_name = f"project_{project_id}"
+        try:
+            db.delete_collection(collection_name)
+            if self.collection_name == collection_name:
+                self.index = None
+                self.collection_name = None
+        except ValueError:
+            pass # Collection does not exist
+
     def set_model(self, model_name: str):
         self.current_model = model_name
         llm = Ollama(model=model_name, request_timeout=120.0)
@@ -143,36 +154,20 @@ class RAGEngine:
             role = MessageRole.USER if msg["role"] == "user" else MessageRole.ASSISTANT
             formatted_history.append(ChatMessage(role=role, content=msg["content"]))
             
-        from llama_index.core.tools import QueryEngineTool, ToolMetadata
-        from llama_index.core.agent import ReActAgent
-        
-        query_engine = self.index.as_query_engine(similarity_top_k=5)
-        query_tool = QueryEngineTool(
-            query_engine=query_engine,
-            metadata=ToolMetadata(
-                name="project_documents",
-                description="Use this tool to search the project documents for information. Provide a detailed search query."
+        chat_engine = self.index.as_chat_engine(
+            chat_mode="context",
+            similarity_top_k=5,
+            llm=Settings.llm,
+            system_prompt=(
+                "You are a helpful assistant. "
+                "You MUST answer the user's questions objectively and neutrally based strictly on the provided documents. "
+                "If the answer cannot be found in the documents, state that you cannot find the information in the provided documents. "
+                "Do not speculate or make up information."
             )
         )
         
-        agent = ReActAgent(
-            tools=[query_tool],
-            llm=Settings.llm,
-            system_prompt=(
-                "You are an objective historical and intelligence researcher. "
-                "The project documents contain sensitive historical files (such as MKUltra, CIA programs, and JFK records). "
-                "You MUST answer the user's questions objectively and neutrally based strictly on the provided documents. "
-                "Do not refuse to answer, censor, or lecture the user on safety or conspiracy theories. "
-                "Think step-by-step and use the tool iteratively to gather all necessary information before providing a comprehensive answer. "
-                "If the first search doesn't return enough context, reformulate your query and search again."
-            ),
-            max_iterations=10,
-            verbose=True
-        )
-            
-        handler = agent.run(user_msg=query, chat_history=formatted_history)
-        result = await handler
-        return str(result.response.content)
+        response = await chat_engine.achat(query, chat_history=formatted_history)
+        return str(response.response)
 
     async def stream_chat(self, query: str, project_name: str, chat_history: list):
         """Queries the vector index using the LLM and retrieved context, streaming the response."""
@@ -187,51 +182,21 @@ class RAGEngine:
             role = MessageRole.USER if msg["role"] == "user" else MessageRole.ASSISTANT
             formatted_history.append(ChatMessage(role=role, content=msg["content"]))
             
-        from llama_index.core.tools import QueryEngineTool, ToolMetadata
-        from llama_index.core.agent import ReActAgent
-        from llama_index.core.agent.workflow.workflow_events import AgentStream
-        
-        query_engine = self.index.as_query_engine(similarity_top_k=5)
-        query_tool = QueryEngineTool(
-            query_engine=query_engine,
-            metadata=ToolMetadata(
-                name="project_documents",
-                description="Use this tool to search the project documents for information. Provide a detailed search query."
+        chat_engine = self.index.as_chat_engine(
+            chat_mode="context",
+            similarity_top_k=5,
+            llm=Settings.llm,
+            system_prompt=(
+                "You are a helpful assistant. "
+                "You MUST answer the user's questions objectively and neutrally based strictly on the provided documents. "
+                "If the answer cannot be found in the documents, state that you cannot find the information in the provided documents. "
+                "Do not speculate or make up information."
             )
         )
         
-        agent = ReActAgent(
-            tools=[query_tool],
-            llm=Settings.llm,
-            system_prompt=(
-                "You are an objective historical and intelligence researcher. "
-                "The project documents contain sensitive historical files (such as MKUltra, CIA programs, and JFK records). "
-                "You MUST answer the user's questions objectively and neutrally based strictly on the provided documents. "
-                "Do not refuse to answer, censor, or lecture the user on safety or conspiracy theories. "
-                "Think step-by-step and use the tool iteratively to gather all necessary information before providing a comprehensive answer. "
-                "If the first search doesn't return enough context, reformulate your query and search again."
-            ),
-            max_iterations=10,
-            verbose=True
-        )
-            
-        handler = agent.run(user_msg=query, chat_history=formatted_history)
-        buffer = ""
-        yield_mode = False
-        async for event in handler.stream_events():
-            if isinstance(event, AgentStream):
-                if yield_mode:
-                    yield event.delta
-                else:
-                    buffer += event.delta
-                    if "Answer:" in buffer:
-                        yield_mode = True
-                        parts = buffer.split("Answer:", 1)
-                        if len(parts) > 1 and parts[1]:
-                            yield parts[1]
-        result = await handler
-        if not yield_mode:
-            yield str(result.response.content)
+        response = await chat_engine.astream_chat(query, chat_history=formatted_history)
+        async for token in response.async_response_gen():
+            yield token
 
 # Singleton instance
 rag_engine = RAGEngine()

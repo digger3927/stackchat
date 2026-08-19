@@ -118,6 +118,9 @@ async def pin_project(project_id: int, request: PinRequest):
 @app.delete("/api/projects/{project_id}")
 async def delete_project(project_id: int):
     try:
+        # Delete the vector collection from ChromaDB
+        rag_engine.delete_project(project_id)
+        # Delete the project from SQLite database
         database.delete_project(project_id)
         return {"status": "success"}
     except Exception as e:

@@ -17,20 +17,53 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
     scrollToBottom();
   }, [messages]);
 
+  const abortControllerRef = useRef(null);
+
   useEffect(() => {
+    let active = true;
+
     if (chatId) {
+      console.log(`[ChatInterface] Fetching history for chatId: ${chatId}`);
       fetch(`http://localhost:8000/api/chats/${chatId}/history`)
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
+          if (!active) {
+            console.log(`[ChatInterface] Aborted history fetch resolution for chatId: ${chatId}`);
+            return;
+          }
+          console.log(`[ChatInterface] History fetch response status: ${data.status}`);
           if (data.status === 'success') {
             setMessages(data.history);
+            console.log(`[ChatInterface] Loaded ${data.history.length} messages from history`);
             if (initialQuery && !initialQueryHandled.current) {
+              console.log(`[ChatInterface] Initial query detected: "${initialQuery}". Sending...`);
               initialQueryHandled.current = true;
               handleSend(initialQuery);
             }
+          } else {
+            throw new Error(data.message || 'Unknown error response');
           }
+        })
+        .catch(err => {
+          if (!active) return;
+          console.error("[ChatInterface] Failed to load chat history:", err);
+          setMessages([{ role: 'bot', content: `**Error loading chat history:** ${err.message}. Please verify the backend API server is running at http://localhost:8000.` }]);
         });
     }
+
+    return () => {
+      active = false;
+      if (abortControllerRef.current) {
+        console.log(`[ChatInterface] Aborting active streaming request due to chatId change or unmount`);
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
   }, [chatId]);
 
   const handleDownload = (content, index) => {
@@ -53,31 +86,55 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
     if (!userMsg || !chatId || loading) return;
 
     if (typeof overrideQuery !== 'string') setInput('');
+    console.log(`[ChatInterface] handleSend query: "${userMsg}"`);
     setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
     setLoading(true);
     
     // Add an empty bot message that we will append to
     setMessages(prev => [...prev, { role: 'bot', content: '' }]);
 
+    // Create AbortController for this stream request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
+      console.log(`[ChatInterface] Fetching stream...`);
       const response = await fetch('http://localhost:8000/api/chats/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, query: userMsg }),
+        signal: abortController.signal,
       });
       
+      console.log(`[ChatInterface] Stream fetch response ok: ${response.ok}, status: ${response.status}`);
       if (!response.ok) {
-        throw new Error('Chat failed');
+        throw new Error(`Server returned status ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('ReadableStream not supported or empty response body');
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let hasReceivedData = false;
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log(`[ChatInterface] Stream reading completed.`);
+          break;
+        }
         
         const chunk = decoder.decode(value, { stream: true });
+        if (!hasReceivedData && chunk) {
+          console.log(`[ChatInterface] Stream received first chunk.`);
+          hasReceivedData = true;
+        }
+        
         setMessages(prev => {
           if (prev.length === 0) return prev;
           const newMessages = [...prev];
@@ -90,6 +147,11 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
         });
       }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log(`[ChatInterface] Stream request aborted.`);
+        return;
+      }
+      console.error("[ChatInterface] Error during streaming:", err);
       setMessages(prev => {
          if (prev.length === 0) return prev;
          const newMessages = [...prev];
@@ -101,7 +163,10 @@ export default function ChatInterface({ chatId, initialQuery, onBack }) {
          return newMessages;
       });
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === abortController) {
+        setLoading(false);
+        abortControllerRef.current = null;
+      }
     }
   };
 

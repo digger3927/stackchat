@@ -3,16 +3,16 @@
 # Navigate to the script's directory
 cd "$(dirname "$0")"
 
-echo "Starting StackChat Backend API..."
+echo "Starting StackChat Backend API (logging to backend.log)..."
 cd backend
 source venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000 &
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload > ../backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 
-echo "Starting StackChat Frontend..."
+echo "Starting StackChat Frontend (logging to frontend.log)..."
 cd frontend
-npm run dev &
+npm run dev > ../frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 echo "=================================================="

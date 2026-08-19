@@ -27,16 +27,34 @@ export default function ProjectDashboard({ projectId, onOpenChat }) {
 
   useEffect(() => {
     if (!projectId) return;
-    fetchProjectDetails();
+    
+    let active = true;
+    
+    // Reset state immediately so we don't display stale data from the previous project
+    setProject(null);
+    setChats([]);
+    
+    // Fetch project details
+    fetch(`http://localhost:8000/api/projects/${projectId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (active && data.status === 'success') {
+          setProject(data.project);
+        }
+      });
       
     // Fetch past chats
     fetch(`http://localhost:8000/api/projects/${projectId}/chats`)
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'success') {
+        if (active && data.status === 'success') {
           setChats(data.chats);
         }
       });
+      
+    return () => {
+      active = false;
+    };
   }, [projectId]);
 
   const handleAsk = async (e) => {
